@@ -92,15 +92,6 @@ Stack Overflow Developer Survey responses.
 
 ------------------------------------------------------------------------
 
-## 📁 Project Structure
-
-Typical project includes: - `data/` --- raw and cleaned survey datasets\
-- `scripts/` --- R scripts for data cleaning, analysis, and plotting\
-- `figures/` --- generated visualizations\
-- `report/` --- compiled results or markdown report
-
-------------------------------------------------------------------------
-
 ## 📜 License
 
 This project is for educational and analytical purposes.
