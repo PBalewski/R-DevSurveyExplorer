@@ -1,4 +1,4 @@
-# Stack Overflow Developer Survey Analysis (R Project)
+# Stack Overflow Developer Survey Analysis
 
 This project contains the analysis of select findings from the **Stack
 Overflow Developer Survey**, performed using the **R programming
