@@ -1,0 +1,579 @@
+---
+title: |
+  ![](PP_logotyp_RGB.jpg)
+  Developers Surveys
+author: "Andrii Chmutov 154974, Piotr Balewski 156037"
+output:
+  html_document: 
+    toc: true
+    toc_float: true
+    theme: cerulean
+    highlight: haddock
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+```
+
+## Report description
+In this report, we are analyzing the answers from developer surveys conducted by [StackOverflow](https://stackoverflow.com/). The results are
+potentially full of surprising and interesting patterns, however, we are concentrating only on several findings. So this article is by no means comprehensive.
+
+
+```{r results='hide', warning=FALSE, message=FALSE}
+library(dplyr)
+library(ggplot2)
+library(ggforce)
+library(plotly)
+library(scales)
+
+```
+
+```{r CSV, cache=TRUE}
+df_2018 <- read.csv("developer_surveys/survey_results_2018.csv")
+df_2023 <- read.csv("developer_surveys/survey_results_2023.csv")
+```
+
+
+## Developer Satisfaction
+
+As students pursuing Computer Science degree, we are curious about the satisfaction of the developers.
+Apparently, nobody is eager to learn how to do something what other people struggle to enjoy. 
+
+### Developer type
+
+We analyzed the spectrum of developers career satisfaction again with the respect to a
+specialization. The more saturated the green the higher satisfaction and by analogy
+the more saturated the red the lower satisfaction.
+
+Y-axis shows developer types and along X-axis the degree satisfaction is shown.
+```{r satsifaction_labels}
+satisfaction_labels_ordered = c(
+  "Extremely dissatisfied",
+  "Moderately dissatisfied",
+  "Slightly dissatisfied",
+  "Neither satisfied nor dissatisfied",
+  "Slightly satisfied",
+  "Moderately satisfied",
+  "Extremely satisfied"
+)
+
+experience_labels_ordered = c(
+  "0-2 years",
+  "3-5 years",
+  "6-8 years",
+  "9-11 years",
+  "12-14 years",
+  "15-17 years",
+  "18-20 years",
+  "21-23 years",
+  "24-26 years",
+  "27-29 years",
+  "30 or more years"
+)
+```
+
+```{r helper_functions}
+categorize_sat <- function(x) {
+  return(match(x, satisfaction_labels_ordered) - 4)
+}
+
+categorize_exp <- function(x) {
+  return(match(x, experience_labels_ordered))
+}
+```
+
+```{r plot_dev_satisfaction_stacked, fig.width=8}
+custom_colors <- c(
+  "#D0312DFF",
+  "#D0312DBB",
+  "#D0312D88",
+  "#22222222",
+  "#33B86488",
+  "#33B864BB",
+  "#33B864FF"
+)
+types_to_observe <- c(
+  "All types",
+  "Back-end developer",
+  "Front-end developer",
+  "C-suite executive (CEO, CTO, etc.)",
+  "Database administrator",
+  "Educator or academic researcher",
+  "Data scientist or machine learning specialist"
+)
+
+# A person may have multiple developer types, so the data
+# should be connected with itself on the "Respondent" column, but
+# making each observation have single developer type. Thus,
+# a respondent may appear more than once, but then it is possible to compare
+# data grouping by developer type
+devtypes <- strsplit(as.character(df_2018$DevType), ";")
+dev_data <- data.frame(
+  DevTypeSingle = unlist(devtypes),
+  Respondent = rep(df_2018$Respondent, sapply(devtypes, length)))
+
+merged <- left_join(df_2018, dev_data, by = "Respondent")
+  
+merged %>%
+  select(CareerSatisfaction, DevTypeSingle) %>%
+  filter(rowSums(is.na(.)) == 0) %>%
+  filter(DevTypeSingle %in% types_to_observe) %>%
+  mutate(CareerSatisfaction = factor(CareerSatisfaction, levels = satisfaction_labels_ordered)) %>%
+  mutate(Order = categorize_sat(CareerSatisfaction)) %>%
+  group_by(DevTypeSingle) %>%
+  summarize(average_satisfaction = mean(Order == 3)) %>%
+  arrange(average_satisfaction) -> custom_order
+
+merged %>%
+  select(CareerSatisfaction, DevTypeSingle) %>%
+  filter(rowSums(is.na(.)) == 0) %>%
+  filter(DevTypeSingle %in% types_to_observe) %>%
+ 
+  mutate(Satisfaction = factor(CareerSatisfaction, levels = satisfaction_labels_ordered)) %>%
+  mutate(Developer = factor(DevTypeSingle, levels = custom_order$DevTypeSingle)) %>%
+  select(Developer, Satisfaction) %>%
+  arrange(Satisfaction, Developer, by_group = TRUE) %>%
+  
+  ggplot(aes(
+    Developer,
+    fill = Satisfaction)) +
+  geom_bar(position = "fill", width = 0.7) +
+  scale_fill_manual(values=custom_colors) +
+  coord_flip() +
+  labs(
+    title = "Developer Satisfaction Spectrum",
+    x = "",
+    y = "Ratio") +
+  theme(
+    panel.background = element_blank(),
+    axis.ticks.x=element_blank(), 
+    axis.ticks.y=element_blank(),
+    axis.text.x=element_blank()
+  )-> satisfaction_plot
+
+satisfaction_plot %>%
+  ggplotly() %>%
+  layout(showlegend = FALSE)
+```
+
+Interesting observation is a fact that C-suite executive programmers group have the biggest fraction
+of "extremely satisfied" as well as "extremely dissatisfied" among all groups. It is possible that
+people at the helm tend to have higher contrast of feeling about their job.
+
+
+### Experience influence
+
+The stance on the career might change over time. Obviously, no one is interested
+in becoming a developer that on average becomes less satisfied with the job.
+
+The graph presents the average satisfaction(Y-axis) of a programmer depending on the
+developer type with the growth of experience(X-axis). There is also a line indicating
+averaged satisfaction level for all programmers without distinction on types. Level of interactivity of this plot
+allows us to select which lines we want to display and which not. This is very useful for comparing
+satisfaction between groups as well as analyzing situation for only one group - without unnecessary
+data.
+
+```{r plot_dev_satisfaction, warning=FALSE, message=FALSE}
+custom_palette = c(
+  "#E64B35B2",
+  "#4DBBD5B2",
+  "#00A087B2",
+  "#3C5488B2",
+  "#F39B7FB2",
+  "#8491B4B2",
+  "#91D1C2B2" 
+)
+
+xlabels = c(
+  "0-2",
+  "3-5",
+  "6-8",
+  "9-11",
+  "12-14",
+  "15-17",
+  "18-20",
+  "21-23",
+  "24-26",
+  "27-29",
+  ">30"
+)
+
+ylabels = satisfaction_labels_ordered[c(4, 5, 6)]
+
+
+all_labeled = df_2018
+all_labeled$DevType = "All types"
+
+
+merged %>%
+  select(-c(DevType)) %>%
+  mutate(DevType = DevTypeSingle) %>%
+  select(-c(DevTypeSingle)) -> merged_trunc
+
+all_merged = rbind.data.frame(all_labeled, merged_trunc)
+
+
+all_merged %>%
+  select(YearsCoding, CareerSatisfaction, DevType) %>%
+  filter(rowSums(is.na(.)) == 0) %>%
+  filter(DevType %in% types_to_observe) %>%
+  mutate(CareerSatisfaction = categorize_sat(CareerSatisfaction)) %>%
+  group_by(YearsCoding, DevType) %>%
+  summarize(average_satisfaction = mean(CareerSatisfaction)) %>%
+  mutate(Order = categorize_exp(YearsCoding)) %>%
+  arrange(Order) %>%
+  
+  ggplot(
+    aes(
+      x = Order,
+      y = average_satisfaction,
+      group = 1,
+      fill = DevType,
+      text = paste0(
+        DevType,
+        "\nAge: ", YearsCoding,
+        "\nAverage satisfaction: ", round(average_satisfaction, 2)))) +
+  scale_x_continuous(
+    breaks = 1:length(xlabels),
+    labels = xlabels) +
+  scale_y_continuous(
+    name   = "",
+    breaks = c(0, 1, 2),
+    limits = c(0, 2),
+    labels = ylabels) +
+  ggtitle("Satisfaction over time") +
+  geom_line(aes(color = DevType)) +
+  geom_point(aes(color = DevType)) +
+  scale_color_manual(values = custom_palette) +
+  scale_fill_manual(values = custom_palette) +
+  theme(plot.title = element_text(hjust = 0.5)) -> satisfaction_plot
+
+satisfaction_plot %>%
+  ggplotly(tooltip = "text") %>%
+  layout(
+    legend = list(
+      orientation = "h",
+      title = "",
+      y = -0.3,
+      font = list(
+        family = "sans-serif",
+        size = 10)),
+    xaxis = list(title = "Experience (years)"))
+```
+
+
+The thing that makes us (AI students) happy is a fact that Data scientist and ML specialist are one 
+of the most satisfied groups on average. However, C-suite developers tend to be even more happy
+about their career. Should we rethink our decision?
+
+
+## Education
+
+Now it's time for something we are still a part of...
+This short part of our report is devoted to analysis of the education factors.
+
+The graph describes the relation between the participants highest education and
+their parents' highest education. To avoid the bias towards frequency,
+the columns are normalized, i.e. for each level of education of a person,
+the distribution of parents' education is shown. Thus, the sum within the column equals
+exactly one.
+
+```{r plot_education, fig.width=7.5, fig.height=6}
+custom_order_formal_ed = c(
+  "I never completed any formal education",
+  "Primary/elementary school",
+  "Secondary school (e.g. American high school, German Realschule or Gymnasium, etc.)",
+  "Some college/university study without earning a degree",
+  "Associate degree",
+  "Bachelor’s degree (BA, BS, B.Eng., etc.)",
+  "Master’s degree (MA, MS, M.Eng., MBA, etc.)",
+  "Other doctoral degree (Ph.D, Ed.D., etc.)",
+  "Professional degree (JD, MD, etc.)"
+)
+
+custom_order_parent_ed = c(
+  "They never completed any formal education",
+  "Primary/elementary school",
+  "Secondary school (e.g. American high school, German Realschule or Gymnasium, etc.)",
+  "Some college/university study without earning a degree",
+  "Associate degree",
+  "Bachelor’s degree (BA, BS, B.Eng., etc.)",
+  "Master’s degree (MA, MS, M.Eng., MBA, etc.)",
+  "Other doctoral degree (Ph.D, Ed.D., etc.)",
+  "Professional degree (JD, MD, etc.)"
+)
+
+labels = c(
+  "No education",
+  "Primary/elementary",
+  "Secondary",
+  "Colledge/university without finishing",
+  "Associate degree",
+  "Bachelor",
+  "Master",
+  "Doctoral",
+  "Professional degree"
+)
+df_2018 %>%
+  select(c(FormalEducation, EducationParents)) %>%
+  filter(rowSums(is.na(.)) == 0) %>%
+  mutate(FormalEducation = factor(FormalEducation, levels = custom_order_formal_ed)) %>%
+  mutate(EducationParents = factor(EducationParents, levels = custom_order_parent_ed)) %>%
+  arrange(FormalEducation, EducationParents, by_group = TRUE) %>%
+  group_by(FormalEducation, EducationParents) %>%
+  summarise(count = n()) %>%
+  mutate(Percent = count / sum(count) * 100) %>%
+  ggplot(aes(
+    x = FormalEducation,
+    y = EducationParents,
+    fill = Percent)) +
+  geom_tile() +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "white") +
+  # geom_text(aes(label = paste(round(percent, 1), "%")),
+  #           color = "black", size = 3) +
+  
+  scale_fill_viridis_c(option = "cividis") +
+  labs(
+    title = "Inter-generational Education Analysis",
+    x = "Developer's Education",
+    y = "Parents' Education") +
+  scale_x_discrete(labels = labels) +
+  scale_y_discrete(labels = labels) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    plot.title = element_text(hjust = 0.5)) -> ed_plot
+
+ed_plot %>% ggplotly
+# df_2018 %>%
+#   select(c(FormalEducation, EducationParents)) %>%
+#   filter(rowSums(is.na(.)) == 0) %>%
+#   mutate(FormalEducation = factor(FormalEducation, levels = custom_order_formal_ed)) %>%
+#   mutate(EducationParents = factor(EducationParents, levels = custom_order_parent_ed)) %>%
+#   arrange(FormalEducation, EducationParents, by_group = TRUE) %>%
+#   ggplot(aes(
+#     FormalEducation,
+#     EducationParents,
+#     aes(fill = after_stat(density)))) +
+#   geom_bin2d() +
+#   geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "white") +
+#   scale_fill_viridis_c(option = "cividis") + 
+#   labs(
+#     title = "Inter-generational Education Analysis",
+#     x = "Education",
+#     y = "Parents' Education") +
+#   scale_x_discrete(labels = labels) +
+#   scale_y_discrete(labels = labels) +
+#   theme(
+#     axis.text.x = element_text(angle = 45, hjust = 1),
+#     plot.title = element_text(hjust = 0.5))
+```
+
+This visualization should be analyzed by columns. We also added a white dash line
+to mark where the axis of theoretical "symmetry" is. There is quite a lot of information
+that can be derived from that heatmap.
+
+The data partially confirms the message from Nałkowska's "Granica", but here
+maybe not in that strongly negative context. We will become like our parents.
+
+## Operating Systems
+
+The last part of our report circles around computer operating systems. We tried to find
+some interesting connections between using some specific OS by a developer
+and show some tendencies.
+
+
+### Developers' preferences
+We started with general data about which OS is most frequently used by a
+specific developer's specialization.
+
+The graph describes the distribution of operating system being currently in use
+by a specific developer type. Similarly to the education analysis, each pane
+describes only proportions within the developer type.
+
+```{r plot_dev_os, warning=FALSE, message=FALSE}
+custom_substitutor = function(x) {
+  x[x == "Data scientist or machine learning specialist"] <- "Data scientist or ML"
+  x[x == "C-suite executive (CEO, CTO, etc.)"] <- "C-suite executive"
+  return(x)
+}
+
+custom_colors <- rep(c(
+  "#373737",
+  "#373737",
+  "#373737",
+  "#00BCFF"
+), times = 6)
+
+merged %>%
+  select(OperatingSystem, DevTypeSingle) %>%
+  filter(rowSums(is.na(.)) == 0) %>%
+  filter(DevTypeSingle %in% types_to_observe) %>%
+  mutate(DevTypeSingle = custom_substitutor(DevTypeSingle)) %>%
+  group_by(DevTypeSingle, OperatingSystem) %>%
+  summarize(n = n()) %>%
+  mutate(Percentage = n / sum(n)) %>%
+  
+  ggplot(aes(
+    x = OperatingSystem,
+    y = Percentage,
+    group = DevTypeSingle,
+    fill = custom_colors)) +
+  geom_bar(stat = "identity") +
+  scale_fill_identity() + 
+  labs(title = "Proportion of OS usage among developer types", x = "") +
+  facet_wrap(. ~ DevTypeSingle) +
+  theme_minimal() +
+  # scale_x_discrete(labels = c("\uf3a4", "\uf17c", "\uf179", "\uf17a")) +
+  theme(
+    axis.text.x = element_text(hjust = 1, angle = 45),
+    axis.text.y = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(hjust = 0.5),
+    panel.spacing = unit(1, "lines")) -> os_plot
+
+
+os_plot %>%
+  ggplotly %>%
+  layout(showlegend = FALSE)
+
+# ("\uf17a", "\uf3a4", "\uf17c", "\uf179")
+```
+
+Evidently, Windows operating system is the most frequent. To emphasize that Windows
+dominates all categories, we colored the corresponding bar. 
+
+MacOS, however is close in terms of frequency when it comes to C-suite developers. It is likely
+that heir salaries enables them to use such devices.
+
+GNU/Linux, on the other hand, tends to be popular among researchers and DS/ML specialists
+apart from Windows. Academic software abundance, in case of educators,
+and use by performance-oriented systems makes Linux-based OS'es attractive.
+
+At the end of the day, BSD/Unix operating systems are least common, apparently,
+among all of the developer types we are analyzing.
+
+
+### Salary implications
+
+Even though such kind of analysis is rough, and drawing conclusions would be
+reckless, it is interesting to observe how a type of operating system might
+indicate your salary. 
+
+The graph focuses on a set of Unix-like operating systems. Y-axis denotes
+an OS, and along X-axis the distribution of salary is shown. We
+combined 3 types of plots, that is: a violin plot, a boxplot and a jitter plot.
+
+The visualization is limited by salary: it does not show values of higher than
+500 000 to avoid outliers.
+
+Results are sorted by the median from the top to the bottom. 
+
+```{r}
+oses_to_observe = c(
+  "Arch",
+  "Ubuntu",
+  "BSD",
+  "MacOS",
+  "Red Hat",
+  "Debian",
+  "Fedora"
+)
+
+
+oses <- strsplit(as.character(df_2023$OpSysPersonal.use), ";")
+os_data <- data.frame(
+  OsSingle = unlist(oses),
+  ResponseId = rep(df_2023$ResponseId, sapply(oses, length)))
+
+merged <- left_join(df_2023, os_data, by = "ResponseId")
+
+merged %>%
+  select(ConvertedCompYearly, OsSingle) %>%
+  filter(rowSums(is.na(.)) == 0) %>%
+  filter(OsSingle %in% oses_to_observe) -> distro_data
+
+distro_data %>%
+  select(OsSingle, ConvertedCompYearly) %>%
+  group_by(OsSingle) %>%
+  summarize(m = median(ConvertedCompYearly)) %>%
+  arrange(m) -> custom_order_salary
+  
+# distro_data %>%
+#   mutate(OsSingle = factor(OsSingle, levels = custom_order_salary$OsSingle)) %>%
+#   arrange(OsSingle) %>%
+#   ggplot(aes(
+#     y = OsSingle,
+#     x = ConvertedCompYearly,
+#     fill = "gray")) +
+#   geom_violin(position = position_dodge(width = 0.5)) +
+#   geom_boxplot(position = position_dodge(width = 0.5), width = 0.2, fill = "white") +
+#   scale_fill_identity() +
+#   coord_cartesian(xlim = c(1, 300000))
+distro_data %>%
+  mutate(OsSingle = factor(OsSingle, levels = custom_order_salary$OsSingle)) %>%
+  arrange(OsSingle) %>%
+  ggplot(aes(
+    y = OsSingle,
+    x = ConvertedCompYearly)) +
+  geom_violin(width = 0.7, fill = "#00BCFF") +
+  geom_sina(
+    maxwidth = 0.7,
+    size = 0.1,
+    alpha = 0.3,
+    fill = "gray") +
+  geom_boxplot(width = 0.1, fill = "white", outlier.shape = NA) +
+  scale_x_continuous(limits = c(1, 500000), labels = label_comma()) +
+  labs(
+    title = "Salary Distribution by Unix-like Operating Systems",
+    x = "Salary USD (Yearly Converted)",
+    y = "Operating System") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+The distributions are close enough, however, there are still considerable difference
+between higher and lower parts of the graph. The dispersion of amount of people
+using different OS'es is now visible.
+
+Arch guys are crying.
+
+We are watching tutorials how to use BSD.
+
+### Open-source contribution
+We investigated whether OS used by a programmer has an
+influence on contribution to an open source projects.
+
+Open-source community is huge, no doubt about that. It is convenient to use a tool
+that you do not have to pay for. Therefore it is curious to know who is the most
+eager to create the bread and butter for programmers.
+
+The analysis groups operating systems by the type. The proportion of developers
+that contribute/don't contribute to the open-source projects is presented.
+
+```{r}
+df_2018 %>%
+  select(OpenSource, OperatingSystem) %>%
+  filter(!is.na(OperatingSystem)) %>%
+  group_by(OperatingSystem, OpenSource) %>%
+  summarize(n = n()) %>%
+  mutate(Percentage = n / sum(n)) %>%
+  ggplot(aes(x = OperatingSystem, y = Percentage, fill = factor(OpenSource))) +
+  geom_bar(stat = "identity") +
+  xlab("Operating System") +  # Moved xlab() inside ggplot
+  scale_fill_discrete(labels = c("No", "Yes")) +
+  scale_fill_manual(values = c("#E64B35B2","#00A087B2")) +
+  labs(fill="Open-source projects contribution") +
+  labs(title = "Operating system and open-source projects") +  # Combined with ggtitle()
+  theme_classic() +
+  theme(plot.title = element_text(hjust=1)) -> contribution_plot
+
+contribution_plot %>%
+  ggplotly()
+```
+
+It turned out that it has and Windows users are the group which proportionally contributes
+the least.
+
+On the other side, BSD and GNU/Linux users are more interested in contributing to open-source.
